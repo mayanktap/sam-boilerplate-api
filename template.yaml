@@ -7,6 +7,15 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: >-
   sam-boilerplate-api
 
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+
 # Transform section specifies one or more macros that AWS CloudFormation uses to process your template
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/transform-section-structure.html
 Transform:
@@ -16,111 +25,136 @@ Transform:
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
-  Function:
-    Tracing: Active
   Api:
     TracingEnabled: True
 
 Resources:
-  # Each Lambda function is defined by properties:
-  # https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-
-  # This is a Lambda function config associated with the source code: get-all-items.js
-  getAllItemsFunction:
-    Type: AWS::Serverless::Function
+  S3Api:
+    Type: AWS::Serverless::Api
     Properties:
-      Handler: src/handlers/get-all-items.getAllItemsHandler
-      Runtime: nodejs16.x
-      Architectures:
-        - x86_64
-      MemorySize: 128
-      Timeout: 100
-      Description: A simple example includes a HTTP get method to get all items from a DynamoDB table.
-      Policies:
-        # Give Create/Read/Update/Delete Permissions to the SampleTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SampleTable
-      Environment:
-        Variables:
-          # Make table name accessible as environment variable from function code during execution
-          SAMPLE_TABLE: !Ref SampleTable
-      Events:
-        Api:
-          Type: Api
-          Properties:
-            Path: /
-            Method: GET
-  # Each Lambda function is defined by properties:
-  # https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+      Name: !Sub "s3-drone-${Environment}-api"
+      StageName: !Ref Environment
+      DefinitionBody: {
+        "swagger": "2.0",
+        "info": {
+          "version": "1.0",
+          "title": "API for interacting with S3."
+        },
+        "paths": {
+          "/{bucket}/{item}": {
+            "get": {
+              "produces": [
+                "application/json"
+              ],
+              "parameters": [
+                {
+                  "name": "item",
+                  "in": "path",
+                  "required": true,
+                  "type": "string"
+                },
+                {
+                  "name": "bucket",
+                  "in": "path",
+                  "required": true,
+                  "type": "string"
+                }
+              ],
+              "responses": {
+                "200": {
+                  "description": "200 response",
+                  "headers": {
+                    "content-type": {
+                      "type": "string"
+                    },
+                    "Content-Type": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "400": {
+                  "description": "400 response"
+                },
+                "500": {
+                  "description": "500 response"
+                }
+              },
+              "x-amazon-apigateway-integration": {
+                "credentials": "arn:aws:iam::${AWS::AccountId}:role/${AWS::Region}APIS3ReadOnlyRole",
+                "responses": {
+                  "4\\d{2}": {
+                    "statusCode": "400"
+                  },
+                  "default": {
+                    "statusCode": "200",
+                    "responseParameters": {
+                      "method.response.header.content-type": "integration.response.header.content-type",
+                      "method.response.header.Content-Type": "integration.response.header.Content-Type"
+                    }
+                  },
+                  "5\\d{2}": {
+                    "statusCode": "500"
+                  }
+                },
+                "requestParameters": {
+                  "integration.request.path.object": "method.request.path.item",
+                  "integration.request.path.bucket": "method.request.path.bucket"
+                },
+                "uri": "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{object}",
+                "passthroughBehavior": "when_no_match",
+                "httpMethod": "GET",
+                "type": "aws"
+              }
+            }
+          }
+        }
+      }
 
-  # This is a Lambda function config associated with the source code: get-by-id.js
-  getByIdFunction:
-    Type: AWS::Serverless::Function
+  APIS3Role:
+    Type: "AWS::IAM::Role"
     Properties:
-      Handler: src/handlers/get-by-id.getByIdHandler
-      Runtime: nodejs16.x
-      Architectures:
-        - x86_64
-      MemorySize: 128
-      Timeout: 100
-      Description: A simple example includes a HTTP get method to get one item by id from a DynamoDB table.
-      Policies:
-        # Give Create/Read/Update/Delete Permissions to the SampleTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SampleTable
-      Environment:
-        Variables:
-          # Make table name accessible as environment variable from function code during execution
-          SAMPLE_TABLE: !Ref SampleTable
-      Events:
-        Api:
-          Type: Api
-          Properties:
-            Path: /{id}
-            Method: GET
-  # Each Lambda function is defined by properties:
-  # https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "apigateway.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      RoleName:
+        Fn::Join:
+          - ''
+          - - Ref: AWS::Region
+            - "APIS3ReadOnlyRole"
 
-  # This is a Lambda function config associated with the source code: put-item.js
-  putItemFunction:
-    Type: AWS::Serverless::Function
+  ApiGatewayLoggingRole:
+    Type: "AWS::IAM::Role"
     Properties:
-      Handler: src/handlers/put-item.putItemHandler
-      Runtime: nodejs16.x
-      Architectures:
-        - x86_64
-      MemorySize: 128
-      Timeout: 100
-      Description: A simple example includes a HTTP post method to add one item to a DynamoDB table.
-      Policies:
-        # Give Create/Read/Update/Delete Permissions to the SampleTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SampleTable
-      Environment:
-        Variables:
-          # Make table name accessible as environment variable from function code during execution
-          SAMPLE_TABLE: !Ref SampleTable
-      Events:
-        Api:
-          Type: Api
-          Properties:
-            Path: /
-            Method: POST
-  # Simple syntax to create a DynamoDB table with a single attribute primary key, more in
-  # https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlesssimpletable
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "apigateway.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - !Sub "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
 
-  # DynamoDB table to store item: {id: &lt;ID&gt;, name: &lt;NAME&gt;}
-  SampleTable:
-    Type: AWS::Serverless::SimpleTable
+  ApiGwAccountConfig:
+    Type: "AWS::ApiGateway::Account"
     Properties:
-      PrimaryKey:
-        Name: id
-        Type: String
-      ProvisionedThroughput:
-        ReadCapacityUnits: 2
-        WriteCapacityUnits: 2
+      CloudWatchRoleArn: !GetAtt "ApiGatewayLoggingRole.Arn"
 
 Outputs:
-  WebEndpoint:
-    Description: "API Gateway endpoint URL for Prod stage"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  APIEndpoint:
+    Description: "API EndPoint for interacting with S3"
+    Value: !Sub "https://${S3Api}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+  APIS3Role:
+    Description: "Test role"
+    Value: !Sub "${APIS3Role}"
