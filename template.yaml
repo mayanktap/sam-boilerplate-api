@@ -64,9 +64,6 @@ Resources:
                 "200": {
                   "description": "200 response",
                   "headers": {
-                    "content-type": {
-                      "type": "string"
-                    },
                     "Content-Type": {
                       "type": "string"
                     }
@@ -88,7 +85,6 @@ Resources:
                   "default": {
                     "statusCode": "200",
                     "responseParameters": {
-                      "method.response.header.content-type": "integration.response.header.content-type",
                       "method.response.header.Content-Type": "integration.response.header.Content-Type"
                     }
                   },
